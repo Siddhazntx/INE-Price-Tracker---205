@@ -43,7 +43,7 @@ flowchart TD
 	SaveCache --> Listings
 	Listings --> Match[Match name or description; take first ten]
 	Match --> Results{Any results?}
-	Results -->|No| Empty[Return results: []]
+	Results -->|No| Empty["Return results: []"]
 	Results -->|Yes| Select[User selects a result]
 	Select --> URL[Set URL from storefront product ID]
 	URL --> Option[User enters option name]
