@@ -4,7 +4,7 @@
 
 INE Product Price Tracker is a full-stack application for searching products in the INE-hosted mock storefront, selecting an option, and recording its price and availability in Supabase. The React dashboard presents tracked products, current stored values, per-option history, scrape attempts, and a CSV export.
 
-The implementation combines a Vite/React frontend, a Node.js/Express API, Playwright browser automation, and Supabase persistence. This note describes the repository as it exists; it does not assume that a hosting provider or external cron job has been configured.
+The implementation combines a Vite/React frontend, a Node.js/Express API, Playwright browser automation, and Supabase persistence. The production backend runs on Render, and an external cron-job.org schedule is configured and verified.
 
 ## 2. System Architecture
 
@@ -23,10 +23,11 @@ flowchart LR
 	ProductService --> DB[(Supabase PostgreSQL)]
 	Server[Server startup] --> Scheduler[In-process scheduler]
 	Scheduler -->|runScrapeCycle| Cycle
-	ExternalCron -. optional authenticated POST .-> API
+	ExternalCron[cron-job.org] -->|POST every 2 hours| API[Render /api/scheduler/run]
+	API -->|Authenticated trigger| Scheduler[Scheduler]
 ```
 
-The external trigger is implemented as an API endpoint, but no external scheduler configuration is included in the repository.
+The external trigger is implemented as an authenticated API endpoint. cron-job.org is configured to invoke the deployed Render endpoint every two hours.
 
 ## 3. Product Search Flow
 
@@ -141,7 +142,29 @@ For non-success outcomes the CSV writes blank price and stock fields while prese
 
 `server.js` starts `scraperScheduler` when the backend process starts. The scheduler runs one cycle immediately and then uses a two-hour in-process interval. It selects active tracked options and scrapes them sequentially. Although the query also selects `scrape_interval_minutes`, the active scheduler uses the single global two-hour interval rather than each row's value. Successful cycles compare the two most recent stored prices and print a price-change message to the backend log.
 
-`POST /api/scheduler/run` is an authenticated asynchronous trigger. It accepts a Bearer token or a `secret` query parameter and compares it with `SCHEDULER_SECRET`. The response confirms that a cycle was triggered; it does not wait for the cycle to finish. No external cron provider or deployed schedule is configured or verified here. An in-process timer cannot run while its host process is stopped or asleep.
+`POST /api/scheduler/run` is an authenticated asynchronous trigger. It accepts a Bearer token or a `secret` query parameter and compares it with `SCHEDULER_SECRET`. The response confirms that a cycle was triggered; it does not wait for the cycle to finish. An in-process timer cannot run while its host process is stopped or asleep.
+
+cron-job.org is configured with `0 */2 * * *` (every two hours), using `POST https://ine-price-tracker-205.onrender.com/api/scheduler/run` and `Authorization: Bearer <SCHEDULER_SECRET>`. The secret value is not included here. The cron-job.org test returned `200 OK` with `{"success":true,"message":"Scheduled scrape cycle triggered"}`. Render production logs confirmed that at least one triggered scrape cycle actually ran and processed multiple tracked products; this verifies the configuration and that production execution, not every future scheduled run.
+
+```text
+cron-job.org
+	↓
+POST /api/scheduler/run
+	↓
+Scheduler
+	↓
+Scrape Cycle
+	↓
+Playwright
+	↓
+INE Mock Store
+	↓
+Supabase
+```
+
+The production logs showed successful loading of dynamically rendered prices, handling of delayed offer-panel loading, and completed processing. One real consent-overlay failure was retried automatically and the subsequent attempt succeeded. Price changes were detected and recorded. Stock is captured when available; when the storefront exposes no reliable count, stock remains unknown.
+
+An in-process timer cannot run while its host process is stopped or asleep; the configured external trigger addresses the sleeping Render free-tier service. The successful verification demonstrates at least one real triggered cycle, not that every future run has been observed.
 
 ## 10. Engineering Trade-offs
 
@@ -162,7 +185,7 @@ Another important Playwright detail was that `page.waitForFunction()` returns a 
 
 ## 12. AI Usage
 
-AI coding assistance was used during development to inspect project structure, help draft and revise implementation changes, and prepare project documentation. Suggestions were grounded against the active source and checked with syntax checks, the frontend production build, and manual storefront/database scripts where available. AI assistance does not verify the live storefront, Supabase project, Vercel/Render deployment, or an external cron configuration; those remain environment-dependent checks.
+AI coding assistance was used during development to inspect project structure, help draft and revise implementation changes, and prepare project documentation. Suggestions were grounded against the active source and checked with syntax checks, the frontend production build, and manual storefront/database scripts where available. Production verification for the Render scheduler trigger and a real scrape cycle is recorded in Section 9; other live services and future scheduled runs remain environment-dependent.
 
 ## 13. Security and Secrets
 
@@ -172,10 +195,10 @@ The current Express setup uses permissive `cors()` and does not authenticate the
 
 ## 14. Deployment
 
-The frontend is a Vite build and can be served as static assets; the backend is an Express process that reads `PORT` and starts its scheduler at process boot. Vercel is the intended frontend target and Render the intended backend target, but this repository contains no provider configuration and does not establish that either deployment is active.
+The frontend is a Vite build and can be served as static assets; its intended hosting target is Vercel, but its production deployment is not verified here. The production Express backend is deployed on Render at `https://ine-price-tracker-205.onrender.com` and starts its in-process scheduler at process boot. The external cron-job.org configuration and at least one triggered production scrape cycle are verified in Section 9.
 
-For a hosted setup, the frontend needs `VITE_API_URL` pointed at the backend origin. The backend needs its Supabase credentials and, if an external trigger is used, `SCHEDULER_SECRET`. An external scheduler must be configured separately to call `POST /api/scheduler/run`; that configuration is not present here. A sleeping or stopped backend will not execute its in-process interval until it runs again.
+For a hosted setup, the frontend needs `VITE_API_URL` pointed at the backend origin. The backend needs its Supabase credentials and `SCHEDULER_SECRET`. cron-job.org is configured to call `POST /api/scheduler/run` every two hours; a sleeping or stopped backend will not execute its in-process interval until it runs again, and the verified external trigger demonstrates at least one successful production execution rather than guaranteeing all future runs.
 
 ## 15. Conclusion
 
-The current implementation provides a working path from storefront search and product selection through browser scraping, Supabase persistence, history/log display, CSV export, and recurring scrape attempts. Its retries, selector logic, stock parsing, scheduler, and hosting remain deliberately straightforward and have known limits described above. Reliable operation depends on the storefront's current DOM, valid Supabase configuration, and a continuously running backend or a separately configured external trigger.
+The current implementation provides a working path from storefront search and product selection through browser scraping, Supabase persistence, history/log display, CSV export, and recurring scrape attempts. Its retries, selector logic, stock parsing, scheduler, and hosting remain deliberately straightforward and have known limits described above. Production verification confirms the configured external trigger and at least one successful triggered scrape cycle; reliable operation still depends on the storefront's current DOM, valid Supabase configuration, and future service availability.

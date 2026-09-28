@@ -8,19 +8,17 @@ INE Product Price Tracker searches the INE-hosted mock storefront and tracks the
 
 ## Architecture
 
-The frontend and backend are intended for Vercel and Render respectively; this repository does not verify either deployment. An external cron provider is also not configured here.
+The production backend runs on Render. cron-job.org triggers its authenticated scheduler endpoint every two hours; the configuration and a real triggered production scrape cycle have been verified.
 
 ```mermaid
 flowchart LR
   User --> Frontend[React and Vite frontend - Vercel target]
   Frontend --> Backend[Express API - Render target]
-  Backend --> Database[(Supabase PostgreSQL)]
-  Backend --> Scraper[Playwright scraper]
-  Scraper --> Storefront[INE mock storefront]
-  Cron[External cron - not configured here] --> Trigger[POST /api/scheduler/run]
-  Trigger --> Cycle[Scheduled scrape cycle]
-  Cycle --> Scraper
-  Cycle --> Database
+  Cron[cron-job.org] -->|POST every 2 hours| Trigger[Render /api/scheduler/run]
+  Trigger --> Cycle[Scrape cycle]
+  Cycle --> Scraper[Playwright]
+  Scraper --> Storefront[INE Mock Store]
+  Storefront --> Database[(Supabase PostgreSQL)]
 ```
 
 ## Scraping & Reliability
@@ -57,7 +55,11 @@ flowchart TD
 
 ## Scheduling
 
-The backend runs a scrape cycle at startup and repeats every two hours. `POST /api/scheduler/run` provides an authenticated trigger for an external scheduler, but no external cron configuration is included or verified. The in-process interval cannot run while the backend process is stopped or asleep.
+The backend starts an in-process scrape cycle at startup and repeats it every two hours while running. Because Render's free-tier service can sleep, cron-job.org is configured with `0 */2 * * *` to send `POST` requests every two hours to `https://ine-price-tracker-205.onrender.com/api/scheduler/run` with `Authorization: Bearer <SCHEDULER_SECRET>`. The secret value is not documented. The trigger returns after starting the cycle; it does not wait for scraping to finish.
+
+## Production Verification
+
+The cron-job.org test returned `200 OK` with `{"success":true,"message":"Scheduled scrape cycle triggered"}`. Render logs confirmed a triggered cycle processed multiple tracked products, loaded dynamically rendered prices with Playwright, handled delayed offer panels, detected and recorded price changes, and completed. One consent-overlay failure was retried successfully. Stock is recorded when available; otherwise it remains unknown.
 
 ## Local Development
 
