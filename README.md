@@ -4,7 +4,7 @@ INE Product Price Tracker searches the INE-hosted mock storefront and tracks the
 
 ## Demo
 
-[**▶️ Watch the scraper demo**](https://drive.google.com/file/d/1sEBLsstKfdfvUPyQboS9_o0a6IxgBull/view?usp=drive_link)
+[**▶️ Watch the scraper demo**]([https://drive.google.com/file/d/1sEBLsstKfdfvUPyQboS9_o0a6IxgBull/view?usp=drive_link](https://drive.google.com/file/d/1sEBLsstkFdfvUPyQboS9_o0a6IxgBull/view?usp=drive_link))
 
 ## Architecture
 
